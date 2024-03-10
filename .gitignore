@@ -1,0 +1,4 @@
+**/*.exe
+.vscode/
+**/build
+chapter5/cam_calibration
