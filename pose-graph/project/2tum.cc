@@ -75,8 +75,8 @@ int main() {
         Eigen::Vector3d t(data[i][0], data[i][1], 0);
         Eigen::Matrix3d r = Eigen::Matrix3d::Identity();
         r.block<2, 2>(0,0) << cos(theta), -sin(theta), sin(theta), cos(theta);
-        rotation = r * rotation;
-        tranlation = r * tranlation + t;
+        tranlation = rotation * t + tranlation;
+        rotation = rotation * r;
         write2tum((double)(i+1), rotation, tranlation, absolute_out);
     }
     absolute_out.close();
