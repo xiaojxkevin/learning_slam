@@ -14,7 +14,6 @@ constexpr int NUM_NODES = 12;
 typedef Eigen::Vector<double, 3 * NUM_NODES> state_vector;
 typedef Eigen::Vector<double, 3 * NUM_NODES> measurement_vector;
 typedef Eigen::Vector<double, 3 * NUM_NODES> coefficient_vector;
-typedef Eigen::Matrix<double, 3, 3 * NUM_NODES> J_matrix;
 typedef Eigen::SparseMatrix<double> H_matrix;
 
 
@@ -110,13 +109,6 @@ inline void compute_gradients(int i, int j, const state_vector& x,
     B_ij.block<2, 2>(0, 0) = inv_Ri;
 }
 
-inline void compute_J_ij(int i, int j, J_matrix& J, 
-                const Eigen::Matrix3d& A_ij, const Eigen::Matrix3d& B_ij)
-{
-    J.block<3, 3>(0, 3 * i) = A_ij;
-    J.block<3, 3>(0, 3 * j) = B_ij;
-}
-
 inline void compute_H_ij(int i, int j, H_matrix& H, 
                 const Eigen::Matrix3d& A_ij, const Eigen::Matrix3d& B_ij)
 {
@@ -135,15 +127,14 @@ inline void compute_H_ij(int i, int j, H_matrix& H,
 inline void compute_b_ij(int i, int j, coefficient_vector& b, const Eigen::Vector3d& e_ij, 
                     const Eigen::Matrix3d& A_ij, const Eigen::Matrix3d& B_ij)
 {
-    b.block<3, 1>(3 * i, 0) = A_ij.transpose() * e_ij;
-    b.block<3, 1>(3 * j, 0) = B_ij.transpose() * e_ij;
+    b.block<3, 1>(3 * i, 0) += A_ij.transpose() * e_ij;
+    b.block<3, 1>(3 * j, 0) += B_ij.transpose() * e_ij;
 }
 
-
-void save_H(unsigned int k, const std::string& file_folder, const H_matrix& matrix)
+inline void save_H(unsigned int k, const std::string& file_folder, const H_matrix& matrix)
 {
     std::string intString = std::to_string(k);
-    intString = std::string(5 - intString.length(), '0') + intString;
+    intString = std::string(3 - intString.length(), '0') + intString;
     std::string save_h_filename = file_folder + intString + ".txt";
     std::ofstream file(save_h_filename);
     if (!file.is_open()) 
@@ -161,19 +152,37 @@ void save_H(unsigned int k, const std::string& file_folder, const H_matrix& matr
     file.close();
 }
 
+inline void save_final_state_tum(std::string& filename, state_vector& x)
+{
+    std::ofstream file(filename);
+    file << std::fixed << std::setprecision(6);
+    for (int i = 0; i != NUM_NODES; ++i)
+    {
+        int idx = 3 * i;
+        double theta = x(idx+2, 0);
+        file << i << " "
+            << x(idx,0) << " " << x(idx+1, 0) << " " << 0.0 << " "
+            << 0 << " " << 0 << " " << sin(theta/2) << " " << cos(theta/2) << std::endl;
+    }
+}
+
 int main() {
-    // The value of z would be edges Z1_2, Z2_3, ..., Z11_12, Z12_1
-    // which is the Lie-algebra for relative poses
-    measurement_vector z = read_data("./pose-graph/project/hw1_data.txt");
+    // set some run-time constants
+    ////////////////////////////////////////////////////
+    std::string raw_data_path = "./pose-graph/project/hw1_data.txt";
+    double convergence_criterion = 1e-9;
+    std::string save_state_path = "./pose-graph/project/poses/opt_tum.txt";
+    ////////////////////////////////////////////////////
+
+    measurement_vector z = read_data(raw_data_path);
     state_vector x = compute_nodes(z);
-    // state_vector dx = state_vector::Ones();
     coefficient_vector b;
     H_matrix H(3 * NUM_NODES, 3 * NUM_NODES);
-    unsigned int iterations(0);
+    unsigned int iterations(1);
 
     auto start = std::chrono::high_resolution_clock::now(); 
 
-    while (iterations <= 100) // TODO: to find the condition
+    while (iterations <= 999)
     {
         b.setZero();
         H.setZero();
@@ -201,11 +210,11 @@ int main() {
             std::cerr << "Decomposition failed!" << std::endl;
             return 1;
         }
-        ++iterations;
-        if (dx.norm() < 1e-3)
+        if (dx.norm() < convergence_criterion)
             break;
         x += dx;
         std::cout << dx.norm() << std::endl;
+        ++iterations;
     }
     
     auto end = std::chrono::high_resolution_clock::now();
@@ -215,7 +224,7 @@ int main() {
     for (int i = 0; i != 3; ++i)
         H.coeffRef(i, i) -= 1.0;
     save_H(iterations, save_h_folder, H);
-    std::cout << x.transpose() << std::endl;
+    save_final_state_tum(save_state_path, x);
 
     return 0;
 }
