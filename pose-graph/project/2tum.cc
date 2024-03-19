@@ -33,7 +33,12 @@ void write2tum(double time_stamp, Eigen::Matrix3d& rotation, Eigen::Vector3d& tr
 }
 
 int main() {
-    std::ifstream data_file("./pose-graph/project/hw1_data.txt");
+    ////////////////////////////////////////////////////
+    std::string raw_data_path = "./pose-graph/project/hw1_data.txt";
+    std::string save_path = "./pose-graph/project/poses/slam_tum.txt";
+    ////////////////////////////////////////////////////
+
+    std::ifstream data_file(raw_data_path);
     std::string line;
     std::vector<std::vector<double>> data(12, std::vector<double>(3));
     // import data
@@ -52,20 +57,8 @@ int main() {
     // print_vector(12, 3, &data);
     data_file.close();
 
-    // relative .tum format
-    std::ofstream relative_out("./pose-graph/project/relative_poses_tum.txt");
-    for (int i = 0; i != 12; ++i)
-    {
-        double theta = data[i][2];
-        Eigen::Vector3d t(data[i][0], data[i][1], 0);
-        Eigen::Matrix3d r = Eigen::Matrix3d::Identity();
-        r.block<2, 2>(0,0) << cos(theta), -sin(theta), sin(theta), cos(theta);
-        write2tum((double)(i+1), r, t, relative_out);
-    }
-    relative_out.close();
-
     // absolute .tum format
-    std::ofstream absolute_out("./pose-graph/project/absolute_poses_tum.txt");
+    std::ofstream absolute_out(save_path);
     Eigen::Matrix3d rotation = Eigen::Matrix3d::Identity();
     Eigen::Vector3d tranlation(0, 0, 0);
     write2tum(0, rotation, tranlation, absolute_out);
@@ -83,5 +76,3 @@ int main() {
 
     return 0;
 }
-
-// evo_traj tum pose-graph/project/absolute_poses_tum.txt -p --plot_mode xy
