@@ -9,12 +9,14 @@
 
 // g++ pose-graph/project/optimize.cc -o ./opt -I /usr/include/eigen3/
 
+const std::string save_h_folder = "pose-graph/project/information_matrix/";
 constexpr int NUM_NODES = 12;
 typedef Eigen::Vector<double, 3 * NUM_NODES> state_vector;
 typedef Eigen::Vector<double, 3 * NUM_NODES> measurement_vector;
 typedef Eigen::Vector<double, 3 * NUM_NODES> coefficient_vector;
 typedef Eigen::Matrix<double, 3, 3 * NUM_NODES> J_matrix;
-typedef Eigen::Matrix<double, 3 * NUM_NODES, 3 * NUM_NODES> H_matrix;
+typedef Eigen::SparseMatrix<double> H_matrix;
+
 
 inline measurement_vector read_data(const std::string& file_path)
 {
@@ -118,10 +120,16 @@ inline void compute_J_ij(int i, int j, J_matrix& J,
 inline void compute_H_ij(int i, int j, H_matrix& H, 
                 const Eigen::Matrix3d& A_ij, const Eigen::Matrix3d& B_ij)
 {
-    H.block<3, 3>(i*3, i*3) = A_ij.transpose() * A_ij;
-    H.block<3, 3>(i*3, j*3) = A_ij.transpose() * B_ij;
-    H.block<3, 3>(j*3, i*3) = B_ij.transpose() * A_ij;
-    H.block<3, 3>(j*3, j*3) = B_ij.transpose() * B_ij;
+    for (int k = 0; k != 3; ++k)
+    {
+        for (int l = 0; l != 3; ++l)
+        {
+            H.coeffRef(i*3+k, i*3+l) += (A_ij.transpose() * A_ij)(k, l);
+            H.coeffRef(i*3+k, j*3+l) += (A_ij.transpose() * B_ij)(k, l);
+            H.coeffRef(j*3+k, i*3+l) += (B_ij.transpose() * A_ij)(k, l);
+            H.coeffRef(j*3+k, j*3+l) += (B_ij.transpose() * B_ij)(k, l);
+        }
+    }
 }
 
 inline void compute_b_ij(int i, int j, coefficient_vector& b, const Eigen::Vector3d& e_ij, 
@@ -131,21 +139,44 @@ inline void compute_b_ij(int i, int j, coefficient_vector& b, const Eigen::Vecto
     b.block<3, 1>(3 * j, 0) = B_ij.transpose() * e_ij;
 }
 
+
+void save_H(unsigned int k, const std::string& file_folder, const H_matrix& matrix)
+{
+    std::string intString = std::to_string(k);
+    intString = std::string(5 - intString.length(), '0') + intString;
+    std::string save_h_filename = file_folder + intString + ".txt";
+    std::ofstream file(save_h_filename);
+    if (!file.is_open()) 
+    {
+        std::cerr << "Error opening file " << save_h_filename << std::endl;
+        return;
+    }
+    for (int k = 0; k < matrix.outerSize(); ++k) 
+    {
+        for (H_matrix::InnerIterator it(matrix, k); it; ++it) 
+        {
+            file << it.row() << " " << it.col() << " " << it.value() << std::endl;
+        }
+    }
+    file.close();
+}
+
 int main() {
     // The value of z would be edges Z1_2, Z2_3, ..., Z11_12, Z12_1
     // which is the Lie-algebra for relative poses
     measurement_vector z = read_data("./pose-graph/project/hw1_data.txt");
     state_vector x = compute_nodes(z);
-    state_vector dx = state_vector::Ones();
+    // state_vector dx = state_vector::Ones();
     coefficient_vector b;
-    H_matrix H;
+    H_matrix H(3 * NUM_NODES, 3 * NUM_NODES);
+    unsigned int iterations(0);
 
     auto start = std::chrono::high_resolution_clock::now(); 
 
-    while (dx.norm() >= 1e-3) // TODO: to find the condition
+    while (iterations <= 100) // TODO: to find the condition
     {
-        b = coefficient_vector::Zero();
-        H = H_matrix::Zero();   
+        b.setZero();
+        H.setZero();
         for (int i = 0; i != NUM_NODES; ++i)
         {
             int j = (i+1) % NUM_NODES;
@@ -156,20 +187,35 @@ int main() {
             compute_H_ij(i, j, H, A_ij, B_ij);
             compute_b_ij(i, j, b, eij, A_ij, B_ij);
         }
-        // std::cout << H << std::endl;
-        // keep the first node fixed
-        H.block<3, 3>(0, 0) += Eigen::Matrix3d::Identity();
+        // save_H(iterations, save_h_folder, H);
 
-        Eigen::SimplicialLDLT<H_matrix> solver;
-        solver.compute(H);
-        dx = solver.solve(-b);
+        // keep the first node fixed
+        for (int i = 0; i != 3; ++i)
+                H.coeffRef(i, i) += 1.0;
+
+        // solve the equation
+        Eigen::SimplicialCholesky<H_matrix> chol(H);
+        Eigen::VectorXd dx = chol.solve(-b);
+        if (chol.info() != Eigen::Success) {
+            // decomposition failed
+            std::cerr << "Decomposition failed!" << std::endl;
+            return 1;
+        }
+        ++iterations;
+        if (dx.norm() < 1e-3)
+            break;
         x += dx;
-        break;
+        std::cout << dx.norm() << std::endl;
     }
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::cout << "Execution time: " << duration.count() << " microseconds" << std::endl;
+    std::cout << "Execution time: " << duration.count() / 1e6 << " s" << std::endl;
+
+    for (int i = 0; i != 3; ++i)
+        H.coeffRef(i, i) -= 1.0;
+    save_H(iterations, save_h_folder, H);
+    std::cout << x.transpose() << std::endl;
 
     return 0;
 }
