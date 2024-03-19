@@ -9,7 +9,6 @@
 
 // g++ pose-graph/project/optimize.cc -o ./opt -I /usr/include/eigen3/
 
-const std::string save_h_folder = "pose-graph/project/information_matrix/";
 constexpr int NUM_NODES = 12;
 typedef Eigen::Vector<double, 3 * NUM_NODES> state_vector;
 typedef Eigen::Vector<double, 3 * NUM_NODES> measurement_vector;
@@ -172,6 +171,7 @@ int main() {
     std::string raw_data_path = "./pose-graph/project/hw1_data.txt";
     double convergence_criterion = 1e-9;
     std::string save_state_path = "./pose-graph/project/poses/opt_tum.txt";
+    std::string save_h_folder = "pose-graph/project/information_matrix/";
     ////////////////////////////////////////////////////
 
     measurement_vector z = read_data(raw_data_path);
@@ -213,12 +213,13 @@ int main() {
         if (dx.norm() < convergence_criterion)
             break;
         x += dx;
-        std::cout << dx.norm() << std::endl;
+        // std::cout << dx.norm() << std::endl;
         ++iterations;
     }
     
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    std::cout << "Finished with " << iterations << " iterations\n";
     std::cout << "Execution time: " << duration.count() / 1e6 << " s" << std::endl;
 
     for (int i = 0; i != 3; ++i)
