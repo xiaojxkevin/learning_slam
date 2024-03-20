@@ -5,7 +5,7 @@
 #include <g2o/core/base_vertex.h>
 #include <g2o/core/base_binary_edge.h>
 #include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_gauss_newton.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/solvers/dense/linear_solver_dense.h>
 #include <g2o/types/slam2d/se2.h>
 
@@ -89,33 +89,36 @@ inline void save_final_state_tum(std::string& filename, state_vector& x)
 }
 
 // Custom vertex representing an absolute pose in 3D space
-// It contains [x, y, theta], and we convert it to SE2
-class VertexPose: public g2o::BaseVertex<3, g2o::SE2> {
+// It contains [x, y, theta]
+class VertexPose: public g2o::BaseVertex<3, Eigen::Vector3d> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    virtual void setToOriginImpl()
+    virtual void setToOriginImpl() // initialize
     {
-        _estimate = g2o::SE2();
+        _estimate.setZero();
     }
-    virtual void oplusImpl( const double* update )
+    virtual void oplusImpl( const double* update ) // update
     {
-        g2o::SE2 inc = g2o::SE2(update[0], update[1], update[2]);
-        _estimate = inc * _estimate;
+        _estimate += Eigen::Vector3d(update[0], update[1], update[2]);
     }
     virtual bool read( std::istream& in ) {return false;}
     virtual bool write( std::ostream& out ) const {return false;}
 };
 
-class EdgeRelativePose: public g2o::BaseBinaryEdge<3, g2o::SE2, VertexPose, VertexPose> {
+class EdgeRelativePose: public g2o::BaseBinaryEdge<3, Eigen::Vector3d, VertexPose, VertexPose> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     EdgeRelativePose() {}
+    // compute eij
     virtual void computeError() override
     {
-        const g2o::SE2& pose1 = static_cast<const VertexPose*>(_vertices[0])->estimate();
-        const g2o::SE2& pose2 = static_cast<const VertexPose*>(_vertices[1])->estimate();
-        g2o::SE2 relativePose = pose1.inverse() * pose2;
-        _error = relativePose.toVector() - _measurement.toVector();
+        const Eigen::Vector3d& v1 = static_cast<const VertexPose*>(_vertices[0])->estimate();
+        const Eigen::Vector3d& v2 = static_cast<const VertexPose*>(_vertices[1])->estimate();
+        g2o::SE2 T1, T2;
+        T1.fromVector(v1);  T2.fromVector(v2);
+        auto relativePose = T1.inverse() * T2;
+        Eigen::Vector3d v(relativePose[0], relativePose[1], relativePose[2]);
+        _error = relativePose.toVector() - _measurement;
     }
     virtual bool read( std::istream& in ) {return false;}
     virtual bool write( std::ostream& out ) const {return false;}
@@ -125,7 +128,7 @@ public:
 int main() {
     ////////////////////////////////////////////////////
     std::string raw_data_path = "/home/jinxi/codes/learning_slam/pose-graph/project/hw1_data.txt";
-    int iterations = 10;
+    int iterations = 7;
     std::string save_state_path = "/home/jinxi/codes/learning_slam/pose-graph/project/poses/g2o_tum.txt";
     ////////////////////////////////////////////////////
     measurement_vector z = read_raw_data(raw_data_path);
@@ -136,7 +139,7 @@ int main() {
     // create a solver
     typedef g2o::BlockSolver<g2o::BlockSolverTraits<3, 3>> BlockSolverType;
     typedef g2o::LinearSolverDense<BlockSolverType::PoseMatrixType> LinearSolverType;
-    auto solver = new g2o::OptimizationAlgorithmGaussNewton(
+    auto solver = new g2o::OptimizationAlgorithmLevenberg(
         std::make_unique<BlockSolverType>(std::make_unique<LinearSolverType>()));
 
     // Create optimizer
@@ -144,41 +147,35 @@ int main() {
     optimizer.setAlgorithm(solver);
 
     // Add vertices (absolute poses)
-    for (int i = 0; i < 12; ++i)
+    for (int i = 0; i != 12; ++i)
     {
         Eigen::Vector3d state = x.block<3, 1>(3 * i, 0);
         auto vertex = new VertexPose();
         vertex->setId(i);
         if (i == 0)
             vertex->setFixed(true);
-        vertex->setEstimate(g2o::SE2(x[0], x[1], x[2])); // Initial estimate
+        vertex->setEstimate(state); // Initial estimate
         optimizer.addVertex(vertex);
+    }
+    // check if set correctly
+    for (int i = 0; i < 12; ++i) {
+        VertexPose* v = static_cast<VertexPose*>(optimizer.vertex(i));
+        std::cout << "Pose " << i << ": " << v->estimate().transpose() << std::endl;
     }
 
     // Add edges (relative pose measurements)
-    for (int i = 0; i < 11; ++i) 
+    for (int i = 0; i != 12; ++i) 
     {
+        int j = (i + 1) % 12;
         auto edge = new EdgeRelativePose();
         edge->setId(i);
         edge->setVertex(0, optimizer.vertex(i));
-        edge->setVertex(1, optimizer.vertex(i + 1));
-
+        edge->setVertex(1, optimizer.vertex(j));
         Eigen::Vector3d m = z.block<3, 1>(3 * i, 0);
-        edge->setMeasurement(g2o::SE2(m[0], m[1], m[2]));
-
+        edge->setMeasurement(m);
         edge->setInformation(Eigen::Matrix3d::Identity()); // Set information matrix
         optimizer.addEdge(edge);
     }
-
-    // Add loop closure edge (from last pose to first pose)
-    auto edge = new EdgeRelativePose();
-    edge->setId(11);
-    edge->setVertex(0, optimizer.vertex(11));
-    edge->setVertex(1, optimizer.vertex(0));
-    Eigen::Vector3d loop_m = z.block<3, 1>(33, 0);
-    edge->setMeasurement(g2o::SE2(loop_m[0], loop_m[1], loop_m[2]));
-    edge->setInformation(Eigen::Matrix3d::Identity());
-    optimizer.addEdge(edge);
 
     auto start = std::chrono::high_resolution_clock::now(); 
 
@@ -195,12 +192,8 @@ int main() {
     for (int i = 0; i < 12; ++i) 
     {
         VertexPose* v = static_cast<VertexPose*>(optimizer.vertex(i));
-        auto R = v->estimate().rotation();
-        double theta = R.angle();
-        auto t = v->estimate().translation();
-        Eigen::Vector3d x_ij(t[0], t[1], theta);
+        auto x_ij = v->estimate();
         new_x.block<3, 1>(3 * i, 0) = x_ij;
-        // std::cout << "Pose " << i << ": " << v->estimate().toVector().transpose() << std::endl;
     }
     save_final_state_tum(save_state_path, new_x);
 
