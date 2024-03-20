@@ -21,3 +21,13 @@
    ```
 
 5. 最后install的文件在 `/usr/local/share/sophus` 和 `/usr/local/include/sophus/` 下 (注意如果要删除的话需要手动进行)
+
+6. **有关(cmake)** 正如我们第二条所述，`fmt` 不是通过cmake得到的，于是乎，我们需要手动link fmt. 例如：
+   ```cmake
+   find_package( Sophus REQUIRED )
+   include_directories( 
+       ${Sophus_INCLUDE_DIRS}
+       "/usr/include/eigen3"
+   )
+   target_link_libraries(your_target_name fmt)
+   ```
