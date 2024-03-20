@@ -99,7 +99,7 @@ public:
     }
     virtual void oplusImpl( const double* update )
     {
-        g2o::SE2 inc = g2o::SE2(Eigen::Vector3d(update[0], update[1], update[2]));
+        g2o::SE2 inc = g2o::SE2(update[0], update[1], update[2]);
         _estimate = inc * _estimate;
     }
     virtual bool read( std::istream& in ) {return false;}
@@ -149,6 +149,8 @@ int main() {
         Eigen::Vector3d state = x.block<3, 1>(3 * i, 0);
         auto vertex = new VertexPose();
         vertex->setId(i);
+        if (i == 0)
+            vertex->setFixed(true);
         vertex->setEstimate(g2o::SE2(x[0], x[1], x[2])); // Initial estimate
         optimizer.addVertex(vertex);
     }
@@ -161,8 +163,6 @@ int main() {
         edge->setVertex(0, optimizer.vertex(i));
         edge->setVertex(1, optimizer.vertex(i + 1));
 
-        // Replace these values with actual measurements
-        // For example, you might have measured (x, y, theta) for each relative pose
         Eigen::Vector3d m = z.block<3, 1>(3 * i, 0);
         edge->setMeasurement(g2o::SE2(m[0], m[1], m[2]));
 
@@ -191,11 +191,18 @@ int main() {
     std::cout << "\nExecution time: " << duration.count() / 1e6 << " s" << std::endl;
 
     // Retrieve optimized poses
+    state_vector new_x;
     for (int i = 0; i < 12; ++i) 
     {
         VertexPose* v = static_cast<VertexPose*>(optimizer.vertex(i));
-        std::cout << "Pose " << i << ": " << v->estimate().toVector().transpose() << std::endl;
+        auto R = v->estimate().rotation();
+        double theta = R.angle();
+        auto t = v->estimate().translation();
+        Eigen::Vector3d x_ij(t[0], t[1], theta);
+        new_x.block<3, 1>(3 * i, 0) = x_ij;
+        // std::cout << "Pose " << i << ": " << v->estimate().toVector().transpose() << std::endl;
     }
+    save_final_state_tum(save_state_path, new_x);
 
     return 0;
 }
