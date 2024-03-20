@@ -57,3 +57,11 @@ Notice that the main two files are `optimize.cc` and `g2o_opt.cc`, where the for
 cd pose-graph/project/poses/
 evo_traj tum * --ref gt_tum.txt -p --plot_mode xy
 ```
+
+## Figures
+
+*I prefer directly running codes for results*
+
+![Information-Matrix](./assets/information_matrix.png)
+
+![trajectories](./assets/traj.png)
