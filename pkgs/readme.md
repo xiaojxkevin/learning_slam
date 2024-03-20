@@ -1,5 +1,9 @@
 # 记录各种包的安装
 
+## Eigen3
+
+这个应该很常见了，随便找一个博客跟着就行。我的放在了 `/usr/include/eigen3` 下。
+
 ## Sophus
 
 1. [github](https://github.com/strasdat/Sophus) clone 下来
@@ -8,7 +12,7 @@
    
 3. 我的 `Eigen` 库是 `3.4.0` 的版本，因此将 `CMakeLists.txt` 第56-58行修改为
    ```cmake
-   `if(NOT TARGET Eigen3::Eigen)
+   if(NOT TARGET Eigen3::Eigen)
         find_package(Eigen3 REQUIRED)
     endif()
    ```
@@ -27,7 +31,6 @@
    find_package( Sophus REQUIRED )
    include_directories( 
        ${Sophus_INCLUDE_DIRS}
-       "/usr/include/eigen3"
    )
    target_link_libraries(your_target_name fmt)
    ```
