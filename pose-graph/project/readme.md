@@ -40,6 +40,7 @@ Notice that the main two files are `optimize.cc` and `g2o_opt.cc`, where the for
 1. For `optimize.cc`, we can try (**please notice the path of work space**)
    ```bash
    g++ pose-graph/project/optimize.cc -o ./opt -I /usr/include/eigen3/
+   ./opt
    ```
 2. As for `g2o_opt.cc`, try
    ```bash
