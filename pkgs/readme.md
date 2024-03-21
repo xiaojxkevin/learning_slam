@@ -1,8 +1,12 @@
 # 记录各种包的安装
 
+## My Device
+
+Ubuntu 22.04, x86-64
+
 ## Eigen3
 
-这个应该很常见了，随便找一个博客跟着就行。我的放在了 `/usr/include/eigen3` 下。
+这个应该很常见了，随便找一个博客跟着就行。我的放在了 `/usr/include/eigen3` 下。比如可以尝试 `sudo apt install libeigen3-dev`
 
 ## Sophus
 
@@ -34,3 +38,13 @@
    )
    target_link_libraries(your_target_name fmt)
    ```
+
+## Ceres and G2O
+
+找到了一篇不错的[blog](https://blog.csdn.net/weixin_53660567/article/details/120295824), 照着上面来就好了。**注意要修改CMakeLists的find Eigen(如果Eigen是3.4.0的话)**
+
+1. 对于`Ceres`, install的文件在 `/usr/local/lib/`, `/usr/local/lib/cmake/Ceres`, `/usr/local/include/ceres/`.
+   
+2. 对于`g2o`,  `/usr/local/include/g2o/`, `/usr/local/lib/cmake/g2o/`, `/usr/local/lib/`, `/usr/local/bin/`
+
+3. 可以在 [这个CMakeLists.txt](../pose-graph/project/g2o-optimize/CMakeLists.txt) 找到一份关于g2o使用有关的cmake files.
