@@ -1,5 +1,7 @@
 # An Explanation for the project
 
+Requirements are in [homework1](./assets/2024_SLAM_Homework1.pdf) and my report is located at [report](./assets/hw1-report.pdf)
+
 ## General structure of this folder
 
 ```bash
@@ -60,7 +62,7 @@ evo_traj tum * --ref gt_tum.txt -p --plot_mode xy
 
 ## Figures
 
-*I prefer directly running codes for results*
+*I advice directly running codes for results*
 
 ![Information-Matrix](./assets/information_matrix.png)
 
