@@ -83,6 +83,9 @@ class Robot(object):
 
     def move(self, rot1:float, trans:float, rot2:float) -> None:
         """book page 136"""
+        rot1 += normalvariate(0, config.a1 * rot1**2 + config.a2 * trans**2)
+        trans += normalvariate(0, config.a3 * trans**2 + config.a4 * (rot1**2 + rot2**2))
+        rot2 += normalvariate(0, config.a1 * rot2**2 + config.a2 * trans**2)
         self.x += trans * cos(self.theta + rot1)
         self.y += trans * sin(self.theta + rot1)
         self.theta += rot1 + rot2
@@ -112,7 +115,7 @@ class Robot(object):
             update_indices = (reach_occpy & valid)
             steps[update_indices] = i
             valid[update_indices] = False
-        # self.directions, self.steps = directions, steps
+        self.directions, self.steps = directions, steps
         z_expected = (steps * IM_RESOLUTION).reshape(config.num_ray)
         # print(z_expected.shape, ranges.shape)
         # print(z_expected, "\n", ranges)
@@ -139,8 +142,8 @@ class Robot(object):
         return float(np.prod(p))
 
 def robot2img(x:float, y:float):
-    px = np.ceil((x+7.5) / IM_RESOLUTION).astype(np.int32)
-    py = np.ceil((y+7.5) / IM_RESOLUTION + MAP_Y_OFFSITE).astype(np.int32)
+    px = np.round((x+7.5) / IM_RESOLUTION).astype(np.int32)
+    py = np.round((y+7.5) / IM_RESOLUTION + MAP_Y_OFFSITE).astype(np.int32)
     return px, py
 
 def msg2state(msg):
@@ -160,9 +163,6 @@ def calculate_motion(state:np.ndarray, last_state:np.ndarray) -> tuple[float, fl
     rot1:float = atan2((bar_y - y), (bar_x - x)) - theta
     trans:float = sqrt((bar_y - y)**2 + (bar_x - x)**2)
     rot2:float = bar_theta - theta - rot1
-    rot1 += normalvariate(0, config.a1 * rot1**2 + config.a2 * trans**2)
-    trans += normalvariate(0, config.a3 * trans**2 + config.a4 * (rot1**2 + rot2**2))
-    rot2 += normalvariate(0, config.a1 * rot2**2 + config.a2 * trans**2)
     return rot1, trans, rot2
 
 def resample(particles:list[Robot], weights:np.ndarray) -> list[Robot]:
@@ -179,7 +179,6 @@ def resample(particles:list[Robot], weights:np.ndarray) -> list[Robot]:
             index = (index + 1) % config.particle_num
         p = particles[index]
         new_p[i].update_state(p.x, p.y, p.theta)
-    particles.clear()
     return new_p
 
 def visualize(myrobot:Robot, save_name:str, show_rays=True, show_expected_rays=False, 
@@ -187,8 +186,9 @@ def visualize(myrobot:Robot, save_name:str, show_rays=True, show_expected_rays=F
     new_img = RGB_IMG.copy()
     draw = ImageDraw.Draw(new_img)
     px, py = robot2img(myrobot.x, myrobot.y)
-    # draw.ellipse((py-1, px-1, py+1, px+1), fill=(0, 0, 0)) # Position of the robot
-    # draw.line((py, px, py + 100 * np.sin(myrobot.theta), px + 100 * np.cos(myrobot.theta)), fill=(0,255,0)) # heading
+    if show_robot_pos:
+        draw.ellipse((py-1, px-1, py+1, px+1), fill=(0, 0, 0)) # Position of the robot
+        draw.line((py, px, py + 100 * np.sin(myrobot.theta), px + 100 * np.cos(myrobot.theta)), fill=(0,255,0)) # heading
     if show_rays:
         ranges = np.asarray([Robot.z[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
         ranges = np.where(ranges == np.inf, 0.0, ranges)
@@ -202,7 +202,7 @@ def visualize(myrobot:Robot, save_name:str, show_rays=True, show_expected_rays=F
     if particles is not None:
         for particle in particles:
             px, py = robot2img(particle.x, particle.y)
-            draw.ellipse((py-1, px, py, px+1), fill=(255, 0, 0))
+            draw.ellipse((py-1, px-1, py+1, px+1), fill=(225, 0, 0))
     new_img.save(save_name)
 
 def process_particles(args) -> float:
@@ -214,7 +214,7 @@ def main():
     particles = [Robot() for _ in range(config.particle_num)]
     myrobot = Robot(0, 0, 0)
     last_triggered_state = myrobot.get_state()
-    visualize(myrobot, "./init.png", False, False, particles)
+    # visualize(myrobot, join(SAVE_RGB_PATH, "0000.png"), False, particles=particles)
     needs_check_scan = False
     scan_ranges = None
     prev_state = None
@@ -240,21 +240,17 @@ def main():
                 with Pool(8) as pool:
                     weights = np.asarray(list(pool.map(process_particles, particles)), dtype=np.float64)
                 weights /= np.sum(weights)
-                # assert False, f"{weights.sum()}"
                 particles = resample(particles, weights)
-                # print(particles[0].get_state())
-                # print(len(particles))
-                myrobot.move(rot1, trans, rot2)
+                myrobot.update_state(new_state[0], new_state[1], new_state[2])
                 myrobot.measure_prob()
                 save_name = join(SAVE_RGB_PATH, "{:04d}.png".format(i))
                 visualize(myrobot, save_name, show_rays=True, particles=particles)
+                # visualize(myrobot, save_name, show_expected_rays=True)
                 # break
                 #######################
                 last_triggered_state = myrobot.get_state()
             needs_check_scan = False
             prev_state = current_state
-        position = [p.get_state() for p in particles[100:130]]
-        print(position)
     end = time()
     duration = end - start
     print("Time costs: {:.6f}".format(duration))
