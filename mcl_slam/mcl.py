@@ -50,14 +50,10 @@ class Config(object):
 config = Config()
 ##################################################### map
 def get_map():
-    """
-    For grid_map, we should access like GRID_MAP[x, y] \\
-    For rgb_img, access it with [y, x]
-    """
     with Image.open(MAP_PATH, "r") as im:
         gridmap = np.asarray(im.getdata(band=None), dtype=np.uint8).reshape(IM_H, IM_W)
-        im = im.convert("RGB")
-        return gridmap, im
+        rgb_im = im.convert("RGB")
+        return gridmap, rgb_im
 GRID_MAP, RGB_IMG = get_map()
 #####################################################
 
@@ -70,7 +66,7 @@ class Robot(object):
         self.theta = 2 * pi * random() - pi
         while True:
             px, py = randint(50, 250), randint(50, 250) # experimental results
-            if GRID_MAP[px, py] > config.occ_threshold:
+            if GRID_MAP[py, px] > config.occ_threshold:
                 self.x, self.y = px*IM_RESOLUTION-7.5, (py-MAP_Y_OFFSITE)*IM_RESOLUTION-7.5
                 break
         self.steps, self.directions = None, None
@@ -81,8 +77,12 @@ class Robot(object):
     def get_state(self):
         return np.array([self.x, self.y, self.theta], dtype=np.float32)
 
-    def move(self, rot1:float, trans:float, rot2:float) -> None:
+    def move(self, relative_state:np.ndarray) -> None:
         """book page 136"""
+        x, y, theta = relative_state[0], relative_state[1], relative_state[2]
+        rot1 = atan2(y, x)
+        trans = sqrt(x**2 + y**2)
+        rot2 = theta - rot1
         rot1 += normalvariate(0, config.a1 * rot1**2 + config.a2 * trans**2)
         trans += normalvariate(0, config.a3 * trans**2 + config.a4 * (rot1**2 + rot2**2))
         rot2 += normalvariate(0, config.a1 * rot2**2 + config.a2 * trans**2)
@@ -111,7 +111,7 @@ class Robot(object):
         for i in range(240): # Z_MAXs / IM_RESOLUTION
             coord_x = np.clip(px + i * np.cos(directions), 0, IM_H - 1).astype(np.int32)
             coord_y = np.clip(py + i * np.sin(directions), 0, IM_H - 1).astype(np.int32)
-            reach_occpy = (GRID_MAP[coord_x, coord_y] < config.occ_threshold)
+            reach_occpy = (GRID_MAP[coord_y, coord_x] < config.occ_threshold)
             update_indices = (reach_occpy & valid)
             steps[update_indices] = i
             valid[update_indices] = False
@@ -153,17 +153,21 @@ def msg2state(msg):
     theta = 2 * np.arctan2(qz, qw)
     return np.array([x, y, theta], dtype=np.float32)
 
-def excess_threshold(state:np.ndarray, last_state:np.ndarray) -> bool:
-    return abs(state[2] - last_state[2]) >= config.min_odom_angle or \
-                ((state[0]-last_state[0])**2 + (state[1]-last_state[1])**2 >= config.min_odom_dis**2)
+def calculate_relative_state(state:np.ndarray, last_state:np.ndarray):
+    theta, last_theta = state[2], last_state[2]
+    t = np.array([[cos(theta), -sin(theta), state[0]],
+                  [sin(theta), cos(theta), state[1]],
+                  [0, 0, 1]], dtype=np.float32)
+    last_t = np.array([[cos(last_theta), -sin(last_theta), last_state[0]],
+                  [sin(last_theta), cos(last_theta), last_state[1]],
+                  [0, 0, 1]], dtype=np.float32)
+    relative_t = np.linalg.inv(last_t) @ t
+    relative_state = np.array([relative_t[0, 2], relative_t[1, 2], theta - last_theta], np.float32)
+    return relative_state
 
-def calculate_motion(state:np.ndarray, last_state:np.ndarray) -> tuple[float, float, float]:
-    bar_x, bar_y, bar_theta = state[0], state[1], state[2]
-    x, y, theta = last_state[0], last_state[1], last_state[2]
-    rot1:float = atan2((bar_y - y), (bar_x - x)) - theta
-    trans:float = sqrt((bar_y - y)**2 + (bar_x - x)**2)
-    rot2:float = bar_theta - theta - rot1
-    return rot1, trans, rot2
+def excess_threshold(relative_state:np.ndarray) -> bool:
+    d = relative_state[0]**2 + relative_state[1]**2
+    return d >= config.min_odom_dis**2 or abs(relative_state[2]) >= config.min_odom_angle
 
 def resample(particles:list[Robot], weights:np.ndarray) -> list[Robot]:
     """book page 110"""
@@ -181,28 +185,28 @@ def resample(particles:list[Robot], weights:np.ndarray) -> list[Robot]:
         new_p[i].update_state(p.x, p.y, p.theta)
     return new_p
 
-def visualize(myrobot:Robot, save_name:str, show_rays=True, show_expected_rays=False, 
-              particles:list[Robot]=None, show_robot_pos=True):
+def visualize(myrobot:Robot, save_name:str, show_rays=False, show_expected_rays=False, 
+              particles:list[Robot]=None, show_robot_pos=False):
     new_img = RGB_IMG.copy()
     draw = ImageDraw.Draw(new_img)
     px, py = robot2img(myrobot.x, myrobot.y)
     if show_robot_pos:
-        draw.ellipse((py-1, px-1, py+1, px+1), fill=(0, 0, 0)) # Position of the robot
-        draw.line((py, px, py + 100 * np.sin(myrobot.theta), px + 100 * np.cos(myrobot.theta)), fill=(0,255,0)) # heading
+        draw.ellipse((px-1, py-1, px+1, py+1), fill=(0, 0, 0)) # Position of the robot
+        draw.line((px, py, px + 100 * np.cos(myrobot.theta), py + 100 * np.sin(myrobot.theta)), fill=(0,255,0)) # heading
     if show_rays:
         ranges = np.asarray([Robot.z[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
         ranges = np.where(ranges == np.inf, 0.0, ranges)
         angles = np.arange(-pi + DEGREE_INCR, pi, config.ray_interval * DEGREE_INCR)
         scan = np.stack([-ranges * np.cos(angles) + 0.2, ranges * np.sin(angles)])
         for i in range(config.num_ray):
-            draw.line((py, px, (scan[1,i]+7.5)/IM_RESOLUTION+MAP_Y_OFFSITE, (scan[0,i]+7.5)/IM_RESOLUTION), fill=(0,0,255))
+            draw.line((px, py, (scan[0,i]+7.5)/IM_RESOLUTION, (scan[1,i]+7.5)/IM_RESOLUTION+MAP_Y_OFFSITE), fill=(0,0,255))
         if show_expected_rays and (myrobot.steps is not None):
             for i in range(config.num_ray):
-                draw.line((py, px, (py + myrobot.steps[i]*sin(myrobot.directions[i])), (px+myrobot.steps[i]*cos(myrobot.directions[i]))), fill=(255,165,0))
+                draw.line((px, py, (px + myrobot.steps[i]*cos(myrobot.directions[i])), (py+myrobot.steps[i]*sin(myrobot.directions[i]))), fill=(255,165,0))
     if particles is not None:
         for particle in particles:
             px, py = robot2img(particle.x, particle.y)
-            draw.ellipse((py-1, px-1, py+1, px+1), fill=(225, 0, 0))
+            draw.ellipse((px-1, py-1, px+1, py+1), fill=(225, 0, 0))
     new_img.save(save_name)
 
 def process_particles(args) -> float:
@@ -217,7 +221,7 @@ def main():
     # visualize(myrobot, join(SAVE_RGB_PATH, "0000.png"), False, particles=particles)
     needs_check_scan = False
     scan_ranges = None
-    prev_state = None
+    prev_state = last_triggered_state
     start = time()
     with Reader(BAG_PATH) as reader:
         for i, (connection, timestamp, rawdata) in enumerate(reader.messages()):
@@ -228,23 +232,25 @@ def main():
                 continue
             # Now the topic must be "/odom"
             current_state = msg2state(msg)
-            if needs_check_scan and (excess_threshold(current_state, last_triggered_state) \
-                                or excess_threshold(prev_state, last_triggered_state)):
+            r2 = calculate_relative_state(current_state, last_triggered_state)
+            r1 = calculate_relative_state(prev_state, last_triggered_state)
+            if needs_check_scan and (excess_threshold(r1) or excess_threshold(r2)):
                 new_state = (current_state + prev_state) / 2.
                 #######################
-                rot1, trans, rot2 = calculate_motion(new_state, last_triggered_state)
+                relative_state = calculate_relative_state(new_state, last_triggered_state)
+                # rot1, trans, rot2 = calculate_motion(new_state, last_triggered_state)
                 # print(rot1, trans, rot2)
                 Robot.z = scan_ranges
                 for particle in particles:
-                    particle.move(rot1, trans, rot2)
-                with Pool(8) as pool:
+                    particle.move(relative_state)
+                with Pool(10) as pool:
                     weights = np.asarray(list(pool.map(process_particles, particles)), dtype=np.float64)
                 weights /= np.sum(weights)
                 particles = resample(particles, weights)
-                myrobot.update_state(new_state[0], new_state[1], new_state[2])
-                myrobot.measure_prob()
+                myrobot.move(relative_state)
+                # myrobot.measure_prob()
                 save_name = join(SAVE_RGB_PATH, "{:04d}.png".format(i))
-                visualize(myrobot, save_name, show_rays=True, particles=particles)
+                visualize(myrobot, save_name, particles=particles)
                 # visualize(myrobot, save_name, show_expected_rays=True)
                 # break
                 #######################
