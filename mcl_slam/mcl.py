@@ -71,7 +71,7 @@ class Robot(object):
                 break
         self.steps, self.directions = None, None
 
-    def update_state(self, x, y, theta):
+    def set_state(self, x, y, theta):
         self.x, self.y, self.theta = x, y, theta
     
     def get_state(self):
@@ -86,9 +86,17 @@ class Robot(object):
         rot1 += normalvariate(0, config.a1 * rot1**2 + config.a2 * trans**2)
         trans += normalvariate(0, config.a3 * trans**2 + config.a4 * (rot1**2 + rot2**2))
         rot2 += normalvariate(0, config.a1 * rot2**2 + config.a2 * trans**2)
-        self.x += trans * cos(self.theta + rot1)
-        self.y += trans * sin(self.theta + rot1)
-        self.theta += rot1 + rot2
+        x = trans * cos(rot1)
+        y = trans * sin(rot1)
+        theta = rot1 + rot2
+        dt = np.array([[cos(theta), -sin(theta), x],
+                  [sin(theta), cos(theta), y],
+                  [0, 0, 1]], dtype=np.float32)
+        t = np.array([[cos(self.theta), -sin(self.theta), self.x],
+                  [sin(self.theta), cos(self.theta), self.y],
+                  [0, 0, 1]], dtype=np.float32)
+        new_t = t @ dt
+        self.x, self.y, self.theta = new_t[0, 2], new_t[1, 2], self.theta + theta
 
     def compute_z_hit_normalizer(self, mu:np.ndarray):
         sigma = config.sigma_hit
@@ -182,7 +190,7 @@ def resample(particles:list[Robot], weights:np.ndarray) -> list[Robot]:
             beta -= weights[index]
             index = (index + 1) % config.particle_num
         p = particles[index]
-        new_p[i].update_state(p.x, p.y, p.theta)
+        new_p[i].set_state(p.x, p.y, p.theta)
     return new_p
 
 def visualize(myrobot:Robot, save_name:str, show_rays=False, show_expected_rays=False, 
@@ -250,8 +258,8 @@ def main():
                 myrobot.move(relative_state)
                 # myrobot.measure_prob()
                 save_name = join(SAVE_RGB_PATH, "{:04d}.png".format(i))
-                visualize(myrobot, save_name, particles=particles)
-                # visualize(myrobot, save_name, show_expected_rays=True)
+                visualize(myrobot, save_name, particles=particles, show_robot_pos=False)
+                # visualize(myrobot, save_name, particles=None, show_robot_pos=True)
                 # break
                 #######################
                 last_triggered_state = myrobot.get_state()
