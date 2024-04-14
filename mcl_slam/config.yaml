@@ -12,12 +12,12 @@ trans2trans_noise: 0.01 # Translation to Translation odom noise
 rot2trans_noise: 0.01   # Rotation to Translation odom noise
 
 # The probability coefficient of Ray Casting Sensor Model 
-z_hit: 5.0
-z_short: 1.0
+z_hit: 6.0
+z_short: 0.5
 z_max: 0.5
-z_rand: 3.5
-sigma_hit: 2.5
-lambda_short: 0.8
+z_rand: 3.0
+sigma_hit: 1.0
+lambda_short: 0.5
 
 
 # ========================FREEZED PARAMETERS=========================
