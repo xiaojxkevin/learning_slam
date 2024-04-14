@@ -107,11 +107,13 @@ class Robot(object):
     def measure_prob(self, scan_ranges) -> float:
         """book page 153"""
         px, py = robot2img(self.x, self.y)
+        t = v2t(self.get_state())
         ranges = np.asarray([scan_ranges[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
         ranges = np.where(ranges == np.inf, 12., ranges) # reset all inf to max range of rays, shape [num_rays,]
         angles = np.arange(-pi + DEGREE_INCR, pi, config.ray_interval * DEGREE_INCR)
         # scans are in the robot frame, and scan = [x, y]
-        scan = np.stack([-ranges * np.cos(angles) + 0.2, ranges * np.sin(angles)])
+        scan = np.stack([-ranges * np.cos(angles) + 0.2, ranges * np.sin(angles), np.ones(angles.shape)])
+        scan = t @ scan
         directions = np.arctan2(scan[1, :] - self.y, scan[0, :] - self.x)
         steps = np.zeros((config.num_ray, 1), dtype=np.int32)
         valid = np.full((config.num_ray,), True, dtype=np.bool_)
@@ -189,12 +191,16 @@ def visualize(save_name:str, scan_ranges=None, particles:list[Robot]=None, state
         px, py = robot2img(state[0], state[1])
         draw.line((px, py, px + 100 * np.cos(state[2]), py + 100 * np.sin(state[2])), fill=(0,255,0)) # heading
     if scan_ranges is not None:
+        t = v2t(state)
         ranges = np.asarray([scan_ranges[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
         ranges = np.where(ranges == np.inf, 0.0, ranges)
         angles = np.arange(-pi + DEGREE_INCR, pi, config.ray_interval * DEGREE_INCR)
-        scan = np.stack([-ranges * np.cos(angles) + 0.2, ranges * np.sin(angles)])
+        scan = np.stack([-ranges * np.cos(angles) + 0.2, ranges * np.sin(angles), np.full(angles.shape, 1.)])
+        scan = t @ scan
         for i in range(config.num_ray):
-            draw.line((px, py, (scan[0,i]+7.5)/IM_RESOLUTION, (scan[1,i]+7.5)/IM_RESOLUTION+MAP_Y_OFFSITE), fill=(0,0,255))
+            x = (scan[0,i]+7.5)/IM_RESOLUTION
+            y = ((scan[1,i]+7.5)/IM_RESOLUTION+MAP_Y_OFFSITE)
+            draw.ellipse((x, y, x+1, y+1), fill=(0,0,255))
     if particles is not None:
         for particle in particles:
             px, py = robot2img(particle.x, particle.y)

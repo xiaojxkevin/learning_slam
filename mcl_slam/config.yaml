@@ -1,6 +1,6 @@
 # ===========YOU CAN CHANGE THESE PARAMETERS BY YOURSELF============= 
 particle_num: 1000      # Number of Particles
-ray_num: 120             # Number of rays
+ray_num: 360             # Number of rays
 occ_threshold: 170      # occupancy threshold
 min_odom_distance: 0.2  # [m] The minial condition to trigger MCL
 min_odom_angle: 20      # [deg] The minial condition to trigger MCL
