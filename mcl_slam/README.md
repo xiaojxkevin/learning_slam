@@ -1,17 +1,40 @@
+# Explanation of Files
 
-At a macro, the particle filter runs as follows, which can be broken down into 4 steps: <br/>
-![image](https://user-images.githubusercontent.com/71652695/129286679-fb046b8f-9ac4-404e-a07c-c63acec66393.png) <br/>
-<br/>
-## Part 1: Initialization <br/>
-&nbsp; - define the number of particles <br/>
-&nbsp; - define the number of rays centered about particle orientation (These rays are used to scan the environment to detect interference) <br/>
-&nbsp; - define the occupancy threshold  <br/>
-## Part 2: Motion Model <br/>
-The following is the odometry model used for each particle, the α values represent motion noises <br/>
-![image](https://user-images.githubusercontent.com/71652695/129286254-0979caac-542c-4edd-a430-ffd36e2f30f1.png) <br/>
-## Part 3: Ray Casting Sensor Model <br/>
-The following is the sensor model used for each particle, the z values can be conveyed as weight for different ray casting noises  <br/>
-![image](https://user-images.githubusercontent.com/71652695/129286435-64de5176-91d9-44f9-ab3f-896b02560426.png) <br/>
-## Part 4: Resampling <br/>
-Finally, the following algorithm resamples particles based on the weights assigned in the previous step <br/>
-![image](https://user-images.githubusercontent.com/71652695/129286802-a12a393d-2ade-420b-b8de-8a341ac02660.png) <br/>
+Requirements are in [homework2](./assets/hw2.pdf) and my report is located at [report](./assets/hw2-report.pdf)
+
+```bash
+mcl_slam/
+├── 2gif.py
+├── config.yaml
+├── data
+│   ├── about.md
+│   ├── gridmap.png
+│   └── hw2_data
+│       ├── hw2_data.db3
+│       └── metadata.yaml
+├── kld_mcl.py
+├── mcl.py
+├── README.md
+```
+
+1. `2gif.py` converts `.png` images to GIFs.
+2. `kld_mcl.py` is the main file for KLD-sampling.
+3. `mcl.py` is the main file for MCL.
+
+# Visual Results
+
+<span style="color:red">Red</span> dots indicates particles. <span style="color:blue">Blue</span> lines are the measured rays on the most likely particle. <span style="color:green">Green</span> line is the heading of the most likely particle.
+
+## MCL
+
+![mcl](./assets/mcl.gif)
+
+## KLD-Sampling
+
+![kld](./assets/kld_mcl.gif)
+
+# APIs of `rosbags`
+
+* [laser-scan](https://ternaris.gitlab.io/rosbags/api/stores/ros2_dashing.html#rosbags.typesys.stores.ros2_dashing.sensor_msgs__msg__LaserScan)
+* [odom](https://ternaris.gitlab.io/rosbags/api/stores/ros2_dashing.html#rosbags.typesys.stores.ros2_dashing.nav_msgs__msg__Odometry)
+* [pose](https://ternaris.gitlab.io/rosbags/api/stores/ros2_dashing.html#rosbags.typesys.stores.ros2_dashing.geometry_msgs__msg__Pose)
