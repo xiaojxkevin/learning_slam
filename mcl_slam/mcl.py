@@ -69,7 +69,6 @@ class Robot(object):
             if GRID_MAP[py, px] > config.occ_threshold:
                 self.x, self.y = px*IM_RESOLUTION-7.5, (py-MAP_Y_OFFSITE)*IM_RESOLUTION-7.5
                 break
-        self.steps, self.directions = None, None
 
     def set_state(self, x, y, theta):
         self.x, self.y, self.theta = x, y, theta
@@ -108,7 +107,7 @@ class Robot(object):
     def measure_prob(self) -> float:
         """book page 153"""
         px, py = robot2img(self.x, self.y)
-        ranges = np.asarray([Robot.z[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
+        ranges = np.asarray([scan_ranges[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
         ranges = np.where(ranges == np.inf, 12., ranges) # reset all inf to max range of rays, shape [num_rays,]
         angles = np.arange(-pi + DEGREE_INCR, pi, config.ray_interval * DEGREE_INCR)
         # scans are in the robot frame, and scan = [x, y]
@@ -123,7 +122,6 @@ class Robot(object):
             update_indices = (reach_occpy & valid)
             steps[update_indices] = i
             valid[update_indices] = False
-        self.directions, self.steps = directions, steps
         z_expected = (steps * IM_RESOLUTION).reshape(config.num_ray)
         # print(z_expected.shape, ranges.shape)
         # print(z_expected, "\n", ranges)
@@ -161,14 +159,17 @@ def msg2state(msg):
     theta = 2 * np.arctan2(qz, qw)
     return np.array([x, y, theta], dtype=np.float32)
 
-def calculate_relative_state(state:np.ndarray, last_state:np.ndarray):
-    theta, last_theta = state[2], last_state[2]
+def v2t(state:np.ndarray):
+    theta = state[2]
     t = np.array([[cos(theta), -sin(theta), state[0]],
                   [sin(theta), cos(theta), state[1]],
                   [0, 0, 1]], dtype=np.float32)
-    last_t = np.array([[cos(last_theta), -sin(last_theta), last_state[0]],
-                  [sin(last_theta), cos(last_theta), last_state[1]],
-                  [0, 0, 1]], dtype=np.float32)
+    return t
+
+def calculate_relative_state(state:np.ndarray, last_state:np.ndarray):
+    theta, last_theta = state[2], last_state[2]
+    t = v2t(state)
+    last_t = v2t(last_state)
     relative_t = np.linalg.inv(last_t) @ t
     relative_state = np.array([relative_t[0, 2], relative_t[1, 2], theta - last_theta], np.float32)
     return relative_state
@@ -193,24 +194,20 @@ def resample(particles:list[Robot], weights:np.ndarray) -> list[Robot]:
         new_p[i].set_state(p.x, p.y, p.theta)
     return new_p
 
-def visualize(myrobot:Robot, save_name:str, show_rays=False, show_expected_rays=False, 
-              particles:list[Robot]=None, show_robot_pos=False):
+def visualize(save_name:str, show_rays=False, particles:list[Robot]=None, state:np.ndarray=None):
     new_img = RGB_IMG.copy()
     draw = ImageDraw.Draw(new_img)
-    px, py = robot2img(myrobot.x, myrobot.y)
-    if show_robot_pos:
-        draw.ellipse((px-1, py-1, px+1, py+1), fill=(0, 0, 0)) # Position of the robot
-        draw.line((px, py, px + 100 * np.cos(myrobot.theta), py + 100 * np.sin(myrobot.theta)), fill=(0,255,0)) # heading
+    if state is not None:
+        px, py = robot2img(state[0], state[1])
+        # draw.ellipse((px-1, py-1, px+1, py+1), fill=(0, 0, 0)) # Position of the robot
+        draw.line((px, py, px + 100 * np.cos(state[2]), py + 100 * np.sin(state[2])), fill=(0,255,0)) # heading
     if show_rays:
-        ranges = np.asarray([Robot.z[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
+        ranges = np.asarray([scan_ranges[i] for i in range(360) if i % config.ray_interval == 0], dtype=np.float32)
         ranges = np.where(ranges == np.inf, 0.0, ranges)
         angles = np.arange(-pi + DEGREE_INCR, pi, config.ray_interval * DEGREE_INCR)
         scan = np.stack([-ranges * np.cos(angles) + 0.2, ranges * np.sin(angles)])
         for i in range(config.num_ray):
             draw.line((px, py, (scan[0,i]+7.5)/IM_RESOLUTION, (scan[1,i]+7.5)/IM_RESOLUTION+MAP_Y_OFFSITE), fill=(0,0,255))
-        if show_expected_rays and (myrobot.steps is not None):
-            for i in range(config.num_ray):
-                draw.line((px, py, (px + myrobot.steps[i]*cos(myrobot.directions[i])), (py+myrobot.steps[i]*sin(myrobot.directions[i]))), fill=(255,165,0))
     if particles is not None:
         for particle in particles:
             px, py = robot2img(particle.x, particle.y)
@@ -224,11 +221,10 @@ def process_particles(args) -> float:
 def main():
     """book page 252"""
     particles = [Robot() for _ in range(config.particle_num)]
-    myrobot = Robot(0, 0, 0)
-    last_triggered_state = myrobot.get_state()
-    # visualize(myrobot, join(SAVE_RGB_PATH, "0000.png"), False, particles=particles)
+    last_triggered_state = np.array([0, 0, 0], dtype=np.float32)
+    visualize(join(SAVE_RGB_PATH, "0000.png"), particles=particles)
     needs_check_scan = False
-    scan_ranges = None
+    global scan_ranges
     prev_state = last_triggered_state
     start = time()
     with Reader(BAG_PATH) as reader:
@@ -246,23 +242,19 @@ def main():
                 new_state = (current_state + prev_state) / 2.
                 #######################
                 relative_state = calculate_relative_state(new_state, last_triggered_state)
-                # rot1, trans, rot2 = calculate_motion(new_state, last_triggered_state)
-                # print(rot1, trans, rot2)
-                Robot.z = scan_ranges
                 for particle in particles:
                     particle.move(relative_state)
                 with Pool(10) as pool:
                     weights = np.asarray(list(pool.map(process_particles, particles)), dtype=np.float64)
                 weights /= np.sum(weights)
+                max_index = weights.argmax()
+                state = particles[max_index].get_state()
                 particles = resample(particles, weights)
-                myrobot.move(relative_state)
-                # myrobot.measure_prob()
                 save_name = join(SAVE_RGB_PATH, "{:04d}.png".format(i))
-                visualize(myrobot, save_name, particles=particles, show_robot_pos=False)
-                # visualize(myrobot, save_name, particles=None, show_robot_pos=True)
+                visualize(save_name, show_rays=True, particles=particles, state=state)
                 # break
                 #######################
-                last_triggered_state = myrobot.get_state()
+                last_triggered_state = new_state
             needs_check_scan = False
             prev_state = current_state
     end = time()
