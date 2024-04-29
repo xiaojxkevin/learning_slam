@@ -14,7 +14,7 @@ id, x, y, z, qx, qy, qz, qw, s
 ## ps:
 id is the identity of each poses
 
-x, y, z, qx, qy, qz, qw in edges.txt means the relative transformation between id0 and id1.
+x, y, z, qx, qy, qz, qw in edges.txt means the relative transformation from id0 to id1.
 
 x, y, z, qx, qy, qz, qw in nodes.txt and GT.txt shows the transformation from world frame to camera frame (be careful about this).
 
