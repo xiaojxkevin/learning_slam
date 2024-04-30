@@ -2,9 +2,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 #############################################
-GT_PATH = "/home/jinxi/codes/learning_slam/pose-graph/scale-aware/data/scale_drift_circle/GT.txt"
-EDGE_PATH = "/home/jinxi/codes/learning_slam/pose-graph/scale-aware/data/scale_drift_circle/edges.txt"
-NODE_PATH = "/home/jinxi/codes/learning_slam/pose-graph/scale-aware/data/scale_drift_circle/nodes.txt"
+GT_PATH = "/home/jinxi/codes/learning_slam/pose-graph/scale-aware/data/scale_jump_circle3/GT.txt"
+EDGE_PATH = "/home/jinxi/codes/learning_slam/pose-graph/scale-aware/data/scale_jump_circle3/edges.txt"
+NODE_PATH = "/home/jinxi/codes/learning_slam/pose-graph/scale-aware/data/scale_jump_circle3/nodes.txt"
 #############################################
 
 def gt2tum():
@@ -28,12 +28,14 @@ def gt2tum():
     print(new_data.shape)
     np.savetxt("./gt__tum.txt", new_data, fmt="%.6f")
 
-def edge2tum():
+def edge2tum(is_jump=False):
     data = np.genfromtxt(EDGE_PATH, skip_header=1)
     n = data.shape[0]
     translations = data[:, 2:5]
     quats = data[:, 5:-1]
     scales = data[:, -1].reshape((-1, 1))
+    if is_jump:
+        scales = np.where(scales == -1, 1, scales)
     rotations = R.from_quat(quats).as_matrix()
     T = np.asarray([np.eye(4) for _ in range(n + 1)])
     print(T.shape, rotations.shape)
@@ -72,6 +74,6 @@ def node2tum():
 
 if __name__ == "__main__":
     # gt2tum()
-    edge2tum()
+    edge2tum(True)
     # node2tum()
 

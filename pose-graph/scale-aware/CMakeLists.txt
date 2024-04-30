@@ -17,3 +17,8 @@ add_executable( scale_drift scale_drift.cc )
 target_link_libraries( scale_drift 
                     g2o_core g2o_stuff 
                     fmt )
+
+add_executable( scale_jump scale_jump.cc )
+target_link_libraries( scale_jump
+                    g2o_core g2o_stuff 
+                    fmt)
