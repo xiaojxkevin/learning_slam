@@ -1,6 +1,6 @@
 **/*.exe
 .vscode/
 **/build
-chapter5/cam_calibration
 private
 __pycache__
+direct_odom/data
