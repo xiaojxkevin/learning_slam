@@ -22,8 +22,5 @@ set( G2O_LIBS
 add_executable( dense dense.cc )
 target_link_libraries( dense ${OpenCV_LIBS} ${G2O_LIBS} fmt)
 
-# add_executable( gaoxiang gaoxiang.cc )
-# target_link_libraries( gaoxiang ${OpenCV_LIBS} ${G2O_LIBS} fmt)
-
-# add_executable( sparse sparse.cc )
-# target_link_libraries( sparse ${OpenCV_LIBS} ${G2O_LIBS} fmt)
+add_executable( sparse sparse.cc )
+target_link_libraries( sparse ${OpenCV_LIBS} ${G2O_LIBS} fmt)
