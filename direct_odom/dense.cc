@@ -9,6 +9,7 @@
 
 // Camera intrinsics
 double fx = 525.0, fy = 525.0, cx = 319.5, cy = 239.5, depth_factor = 5000.0;
+double error_threshold;
 
 // useful typedefs
 typedef std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> VecVector2d;
@@ -124,7 +125,8 @@ int main() {
     const std::string output_path = "/home/jinxi/codes/learning_slam/direct_odom/poses/dense.txt";
     const int num_imgs(754); // In total there are 754 images.
     const int boarder(20), iterations(20);
-    const double grad_thro = 80.0;
+    const double grad_thro = 50.0;
+    error_threshold = 25.0;
     /////////////////////////////////////////////////////////
     // Init
     std::ifstream inputFile(pairs_path);
@@ -271,6 +273,8 @@ void JacobianAccumulator::accumulate_jacobian(const cv::Range &range)
 
                 double error = GetPixelValue(img1, px_ref[i][0] + x, px_ref[i][1] + y) -
                                GetPixelValue(img2, u + x, v + y);
+                if (abs(error) >= error_threshold) continue;
+
                 Matrix26d J_pixel_xi;
                 Eigen::Vector2d J_img_pixel;
 
