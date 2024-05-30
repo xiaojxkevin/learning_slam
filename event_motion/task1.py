@@ -1,7 +1,7 @@
 import numpy as np
 
-K = np.array([[320, 0, 640],
-             [0, 320, 480],
+K = np.array([[320, 0, 320],
+             [0, 320, 240],
              [0, 0, 1]], dtype=np.float64)
 
 # With no self-rotation
@@ -28,15 +28,13 @@ def main():
     f_directions = np.concatenate([pixel_coords, np.ones((num_samples, 1))], axis=1) @ np.linalg.inv(K).T
     f_directions /= np.linalg.norm(f_directions, axis=1).reshape((-1, 1))
     # print(f_directions.shape, f_directions[0])
-    # mat_A = np.concatenate([time_stamps*f_directions, f_directions], axis=1)
-    mat_A = np.concatenate([time_stamps*f_directions, f_directions], axis=1)[10:26, :]
-    # print(mat_A.shape)
+    mat_A = np.concatenate([time_stamps*f_directions, f_directions], axis=1)
     _, S, Vh = np.linalg.svd(mat_A, full_matrices=True, compute_uv="True")
     x_hat = Vh.T[:, -1]
     # Normalize the vector to recover the scale
     x_hat /= np.linalg.norm(x_hat[3:])
     x1, x2 = x_hat[:3], x_hat[3:]
-    print(f"x hat: {x_hat}")
+    # print(f"x hat: {x_hat}")
     e2 = x2.copy()
     uz = np.sum(x1 * x2)
     uy = np.linalg.norm(np.cross(x1, x2))

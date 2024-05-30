@@ -5,6 +5,9 @@ K = np.array([[320, 0, 320],
              [0, 320, 240],
              [0, 0, 1]], dtype=np.float64)
 omega = np.array([-0.242109, 0.0857362, 0.0507106], dtype=np.float64)
+MAX_ITERATION = int(1e6)
+EPSILON = 1e-3
+N = 42
 
 def skew_func(a):
     A = np.array([[0, -a[2], a[1]],
@@ -15,13 +18,11 @@ def skew_func(a):
 def so3ToSO3(xi):
     return expm(skew_func(xi))
 
-# With the 
 def main():
-    file_path = "/home/jinxi/codes/learning_slam/event_motion/data/data_package2.txt"
+    file_path = "/home/jinxi/codes/learning_slam/event_motion/data/data_package3.txt"
     data = np.genfromtxt(file_path, dtype=np.float64, delimiter=",", skip_header=2)
     pixel_coords = data[:, :2]
     time_stamps = data[:, -1].reshape((-1, 1))
-
     num_samples = pixel_coords.shape[0]
     f_directions = np.concatenate([pixel_coords, np.ones((num_samples, 1))], axis=1) @ np.linalg.inv(K).T
     f_directions /= np.linalg.norm(f_directions, axis=1).reshape((-1, 1))
@@ -29,12 +30,28 @@ def main():
         xi = time_stamps[i] * omega
         rotation = so3ToSO3(xi)
         f_directions[i] = rotation @ f_directions[i]
-
     mat_A = np.concatenate([time_stamps*f_directions, f_directions], axis=1)
-    # mat_A = np.concatenate([time_stamps*f_directions, f_directions], axis=1)[14:20, :]
-    _, S, Vh = np.linalg.svd(mat_A, full_matrices=False, compute_uv="True")
+    
+    valid = None
+    flag = True
+    for i in range(MAX_ITERATION):
+        choices = np.random.choice(num_samples, 5)
+        selected_A = mat_A[choices]
+        if np.linalg.matrix_rank(selected_A) < 5:
+            continue
+        _, S, Vh = np.linalg.svd(selected_A, full_matrices=True, compute_uv="True")
+        x_hat = Vh.T[:, -1]
+        res = np.abs(mat_A @ x_hat)
+        valid = (res < EPSILON)
+        if np.count_nonzero(valid) >= N:
+            flag = False
+            print(i)
+            break
+            
+    if np.linalg.matrix_rank(mat_A[valid]) < 5 or flag:
+        assert False, "No valid result!"
+    _, S, Vh = np.linalg.svd(mat_A[valid], full_matrices=False, compute_uv="True")
     x_hat = Vh.T[:, -1]
-    # Normalize the vector to recover the scale
     x_hat /= np.linalg.norm(x_hat[3:])
     x1, x2 = x_hat[:3], x_hat[3:]
     print(f"x hat: {x_hat}")
@@ -49,5 +66,8 @@ def main():
     print(f"Rotation matrix for line expressed in inference frame:\n{R_l}")
     print(f"Velocity of the cam in line frame:\n{u_l.T}")
 
+
 if __name__ == "__main__":
     main()
+    # from math import comb
+    # print(comb(50, 5))
