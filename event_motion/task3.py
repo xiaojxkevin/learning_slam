@@ -5,9 +5,9 @@ K = np.array([[320, 0, 320],
              [0, 320, 240],
              [0, 0, 1]], dtype=np.float64)
 omega = np.array([-0.242109, 0.0857362, 0.0507106], dtype=np.float64)
-MAX_ITERATION = int(1e4)
-EPSILON = 1e-7
-N = 45
+MAX_ITERATION = int(1e5)
+EPSILON = 1e-5
+N = 30
 
 def skew_func(a):
     A = np.array([[0, -a[2], a[1]],
@@ -19,8 +19,8 @@ def so3ToSO3(xi):
     return expm(skew_func(xi))
 
 def find_R_and_u(x_hat):
-    x_hat /= np.linalg.norm(x_hat[3:])
-    x1, x2 = x_hat[:3], x_hat[3:]
+    new_hat = x_hat / np.linalg.norm(x_hat[3:])
+    x1, x2 = new_hat[:3], new_hat[3:]
     e2 = x2.copy()
     uz = np.sum(x1 * x2)
     uy = np.linalg.norm(np.cross(x1, x2))
@@ -49,9 +49,32 @@ def ang_repo_err(R_l, u_l, t, f):
 
     return sigma
 
+def vis(data):
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D  # Ensure 3D plotting toolkit is imported
+    y_px = data[:50, 0]
+    y_py = data[:50, 1]
+    t = data[:50, -1]
+    n_px = data[50:, 0]
+    n_py = data[50:, 1]
+    n_t = data[50:, -1]
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(y_px, y_py, t, c='b', marker='o', label="Clean")
+    ax.scatter(n_px, n_py, n_t, c='r', marker='x', label="Noisy")
+    ax.set_zlabel('Time')
+    ax.set_xlabel('X Coordinate')
+    ax.set_ylabel('Y Coordinate')
+    def on_key(event):
+        if event.key == ' ':
+            plt.close(fig)
+    fig.canvas.mpl_connect('key_press_event', on_key)
+    plt.show()
+
 def main():
     file_path = "/home/jinxi/codes/learning_slam/event_motion/data/data_package3.txt"
     data = np.genfromtxt(file_path, dtype=np.float64, delimiter=",", skip_header=2)
+    vis(data)
     pixel_coords = data[:, :2]
     time_stamps = data[:, -1].reshape((-1, 1))
     num_samples = pixel_coords.shape[0]
@@ -63,52 +86,35 @@ def main():
         f_directions[i] = rotation @ f_directions[i]
     mat_A = np.concatenate([time_stamps*f_directions, f_directions], axis=1)
     
-    flag = False
     R_l, u_l = None, None
+    rots, vels, errors = [], [], []
     for i in range(MAX_ITERATION):
         choices = np.random.choice(num_samples, 5)
         selected_A = mat_A[choices]
         _, S, Vh = np.linalg.svd(selected_A, full_matrices=True, compute_uv="True")
         if S[4] < 1e-9:
-            continue
-        valid = []
+            continue 
         x_hat = Vh.T[:, -1]
+        res = mat_A @ x_hat
+        valid = (np.abs(res) < EPSILON)
         R_l, u_l = find_R_and_u(x_hat)
-        for j in range(num_samples):
-            res = ang_repo_err(R_l, u_l, time_stamps[j], f_directions[j])
-            if res < EPSILON:
-                valid.append(j)
-        if len(valid) >= N:
-            flag = True
-            break
+        if np.count_nonzero(valid) >= N:
+            _, S, Vh = np.linalg.svd(mat_A[valid], full_matrices=False, compute_uv="True")
+            x_hat = Vh.T[:, -1]
+            R_l, u_l = find_R_and_u(x_hat)
+            errors.append(np.linalg.norm(mat_A[valid] @ x_hat))
+            rots.append(R_l)
+            vels.append(u_l)
     
-    if not flag:
+    if len(errors) == 0:
         assert False, f"No valid result!"
-    _, S, Vh = np.linalg.svd(mat_A[valid], full_matrices=True, compute_uv="True")
-    if S[4] < 1e-9:
-        assert False, f"No valid result!"
-    x_hat = Vh.T[:, -1]
-    R_l, u_l = find_R_and_u(x_hat)
-    err = 0
-    for j in range(num_samples):
-        err += ang_repo_err(R_l, u_l, time_stamps[j], f_directions[j])
+    idx = np.argmin(errors)
+    R_l, u_l, err = rots[idx], vels[idx], errors[idx]
 
-    print(err)
+    print("Error: ", err)
     print(f"Rotation matrix for line expressed in inference frame:\n{R_l}")
     print(f"Velocity of the cam in line frame:\n{u_l.T}")
-    print()
-    return R_l, u_l, err
 
 
 if __name__ == "__main__":
-    # main()
-    rots, vels, errs = [], [], []
-    for it in range(10):
-        rot, vel, err = main()
-        rots.append(rot)
-        vels.append(vel)
-        errs.append(err)
-    
-    idx = np.argmin(errs)
-    print(f"Rotation matrix for line expressed in inference frame:\n{rots[idx]}")
-    print(f"Velocity of the cam in line frame:\n{vels[idx].T}")
+    main()
